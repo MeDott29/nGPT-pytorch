@@ -49,3 +49,7 @@ After each training batch, *all* weight matrices and embeddings are re-normalize
 
 
 nGPT's faster convergence is a compelling advantage, especially for resource-constrained settings.
+
+
+<img src="./assets/DALL·E 2024-10-21 19.05.21 - A detailed 3D rendering of a hypersphere. The surface of the hypersphere should display evenly distributed vectors or lines radiating from the center .webp" width="350px"></img>
+<img src="./assets/DALL·E 2024-10-21 19.05.41 - A 3D visualization of network parameters optimized on a hypersphere. Display a spherical surface with several evenly spaced vectors extending from its.webp" width="350px"></img>

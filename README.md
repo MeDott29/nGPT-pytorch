@@ -1,4 +1,4 @@
-<img src="./ngpt-table1.png" width="350px"></img>
+<img src="./assets/ngpt-table1.png" width="350px"></img>
 
 ## nGPT (normalized GPT) - Pytorch
 
