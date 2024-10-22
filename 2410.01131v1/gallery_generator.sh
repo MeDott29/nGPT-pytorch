@@ -3,9 +3,12 @@
 # Define supported media file extensions
 extensions=("jpg" "jpeg" "png" "gif")
 
+# Create the assets folder if it doesn't already exist
+mkdir -p assets
+
 # Start creating the README.md content
 echo "# Image Gallery" > README.md
-echo "This gallery displays the media files in the current directory." >> README.md
+echo "This gallery displays the media files located in the 'assets' folder." >> README.md
 echo "" >> README.md
 
 # Loop through each supported extension
@@ -18,8 +21,8 @@ do
     if [ -f "$file" ]; then
       # Replace spaces in filenames with underscores for proper Markdown linking
       safe_file=$(echo "$file" | sed 's/ /_/g')
-      mv "$file" "$safe_file"
-      echo "![${safe_file}](./${safe_file})" >> README.md
+      mv "$file" "assets/$safe_file"
+      echo "![${safe_file}](./assets/${safe_file})" >> README.md
       echo "" >> README.md
     fi
   done
