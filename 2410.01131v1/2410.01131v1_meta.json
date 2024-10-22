@@ -1,0 +1,330 @@
+{
+    "languages": null,
+    "filetype": "pdf",
+    "pdf_toc": [
+        {
+            "title": "Introduction",
+            "level": 0,
+            "page": 0
+        },
+        {
+            "title": "Evolution of the Transformer: From GPT to nGPT",
+            "level": 0,
+            "page": 1
+        },
+        {
+            "title": "Token Embeddings and Output Logits",
+            "level": 1,
+            "page": 1
+        },
+        {
+            "title": "Layers and Blocks",
+            "level": 1,
+            "page": 2
+        },
+        {
+            "title": "Baseline Transformer",
+            "level": 2,
+            "page": 2
+        },
+        {
+            "title": "Normalized Transformer",
+            "level": 2,
+            "page": 2
+        },
+        {
+            "title": "Self-Attention Block",
+            "level": 1,
+            "page": 2
+        },
+        {
+            "title": "Baseline Transformer",
+            "level": 2,
+            "page": 2
+        },
+        {
+            "title": "Normalized Transformer",
+            "level": 2,
+            "page": 3
+        },
+        {
+            "title": "MLP Block",
+            "level": 1,
+            "page": 3
+        },
+        {
+            "title": "Baseline Transformer",
+            "level": 2,
+            "page": 3
+        },
+        {
+            "title": "Normalized Transformer",
+            "level": 2,
+            "page": 4
+        },
+        {
+            "title": "Effective learning rates in Adam",
+            "level": 1,
+            "page": 4
+        },
+        {
+            "title": "Summary of modifications",
+            "level": 1,
+            "page": 4
+        },
+        {
+            "title": "Experiments",
+            "level": 0,
+            "page": 5
+        },
+        {
+            "title": "Acceleration of training",
+            "level": 1,
+            "page": 5
+        },
+        {
+            "title": "Inspection of network parameters",
+            "level": 1,
+            "page": 6
+        },
+        {
+            "title": "Ablation studies",
+            "level": 1,
+            "page": 8
+        },
+        {
+            "title": "Related Work",
+            "level": 0,
+            "page": 8
+        },
+        {
+            "title": "Discussion and Conclusion",
+            "level": 0,
+            "page": 9
+        },
+        {
+            "title": "Appendix",
+            "level": 0,
+            "page": 11
+        },
+        {
+            "title": "Rescaling in the MLP block of the normalized Transformer",
+            "level": 1,
+            "page": 11
+        },
+        {
+            "title": "Eigen learning rates",
+            "level": 1,
+            "page": 11
+        },
+        {
+            "title": "Riemannian optimization",
+            "level": 1,
+            "page": 11
+        },
+        {
+            "title": "Time cost per step",
+            "level": 1,
+            "page": 12
+        },
+        {
+            "title": "Experimental setup",
+            "level": 1,
+            "page": 12
+        },
+        {
+            "title": "Selection of the initial learning",
+            "level": 1,
+            "page": 13
+        },
+        {
+            "title": "Length Extrapolation Ability",
+            "level": 1,
+            "page": 16
+        },
+        {
+            "title": "Ablation studies",
+            "level": 1,
+            "page": 17
+        },
+        {
+            "title": "Analysis of scaling parameters",
+            "level": 1,
+            "page": 19
+        }
+    ],
+    "pages": 21,
+    "ocr_stats": {
+        "ocr_pages": 1,
+        "ocr_failed": 0,
+        "ocr_success": 1,
+        "ocr_engine": "surya"
+    },
+    "block_stats": {
+        "header_footer": 20,
+        "code": 0,
+        "table": 6,
+        "equations": {
+            "successful_ocr": 46,
+            "unsuccessful_ocr": 3,
+            "equations": 49
+        }
+    },
+    "computed_toc": [
+        {
+            "title": "NGPT: NORMALIZEDTRANSFORMER WITHREPRE-\nSENTATIONLEARNING ON THEHYPERSPHERE",
+            "level": 2,
+            "page": 0
+        },
+        {
+            "title": "ABSTRACT",
+            "level": 3,
+            "page": 0
+        },
+        {
+            "title": "1 INTRODUCTION",
+            "level": 3,
+            "page": 0
+        },
+        {
+            "title": "2 EVOLUTION OF THE TRANSFORMER: FROM GPT TO NGPT",
+            "level": 3,
+            "page": 1
+        },
+        {
+            "title": "2.1 TOKEN EMBEDDINGS AND OUTPUT LOGITS",
+            "level": 3,
+            "page": 1
+        },
+        {
+            "title": "2.2 LAYERS AND BLOCKS",
+            "level": 3,
+            "page": 2
+        },
+        {
+            "title": "2.2.1 BASELINE TRANSFORMER",
+            "level": 3,
+            "page": 2
+        },
+        {
+            "title": "2.2.2 NORMALIZED TRANSFORMER",
+            "level": 3,
+            "page": 2
+        },
+        {
+            "title": "2.3 SELF-ATTENTION BLOCK",
+            "level": 3,
+            "page": 2
+        },
+        {
+            "title": "2.3.1 BASELINE TRANSFORMER",
+            "level": 3,
+            "page": 2
+        },
+        {
+            "title": "2.3.2 NORMALIZED TRANSFORMER",
+            "level": 3,
+            "page": 3
+        },
+        {
+            "title": "2.4 MLP BLOCK",
+            "level": 3,
+            "page": 3
+        },
+        {
+            "title": "2.4.1 BASELINE TRANSFORMER",
+            "level": 3,
+            "page": 3
+        },
+        {
+            "title": "2.4.2 NORMALIZED TRANSFORMER",
+            "level": 3,
+            "page": 4
+        },
+        {
+            "title": "2.5 EFFECTIVE LEARNING RATES IN ADAM",
+            "level": 3,
+            "page": 4
+        },
+        {
+            "title": "2.6 SUMMARY OF MODIFICATIONS",
+            "level": 3,
+            "page": 4
+        },
+        {
+            "title": "3 EXPERIMENTS",
+            "level": 3,
+            "page": 5
+        },
+        {
+            "title": "3.2 INSPECTION OF NETWORK PARAMETERS",
+            "level": 3,
+            "page": 6
+        },
+        {
+            "title": "3.3 ABLATION STUDIES",
+            "level": 3,
+            "page": 8
+        },
+        {
+            "title": "4 RELATED WORK",
+            "level": 3,
+            "page": 8
+        },
+        {
+            "title": "5 DISCUSSION AND CONCLUSION",
+            "level": 3,
+            "page": 9
+        },
+        {
+            "title": "REFERENCES",
+            "level": 3,
+            "page": 9
+        },
+        {
+            "title": "A APPENDIX",
+            "level": 3,
+            "page": 11
+        },
+        {
+            "title": "A.2 EIGEN LEARNING RATES",
+            "level": 3,
+            "page": 11
+        },
+        {
+            "title": "A.3 RIEMANNIAN OPTIMIZATION",
+            "level": 3,
+            "page": 11
+        },
+        {
+            "title": "A.4 TIME COST PER STEP",
+            "level": 3,
+            "page": 12
+        },
+        {
+            "title": "A.5 EXPERIMENTAL SETUP",
+            "level": 3,
+            "page": 12
+        },
+        {
+            "title": "A.6 SELECTION OF THE INITIAL LEARNING",
+            "level": 3,
+            "page": 13
+        },
+        {
+            "title": "A.7 LENGTH EXTRAPOLATION ABILITY",
+            "level": 3,
+            "page": 16
+        },
+        {
+            "title": "A.8 ABLATION STUDIES",
+            "level": 3,
+            "page": 17
+        },
+        {
+            "title": "A.9 ANALYSIS OF SCALING PARAMETERS",
+            "level": 3,
+            "page": 19
+        }
+    ]
+}
