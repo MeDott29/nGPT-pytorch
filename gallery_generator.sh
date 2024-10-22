@@ -10,7 +10,7 @@
    case "$extension" in                                                                                                                              
      png|jpg|jpeg|gif|bmp|svg|webp)                                                                                                                  
        # Generate markdown image tag                                                                                                                 
-       echo "![ $filename]($file)" > assets/README.md                                                                                                
+       echo "![ $filename]($file)" >> assets/README.md
        ;;                                                                                                                                            
      *)                                                                                                                                              
        # Ignore non-image files                                                                                                                      
