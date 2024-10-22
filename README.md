@@ -1,3 +1,7 @@
+Private ChatGPT conversation: https://chatgpt.com/c/6716b12f-0854-8012-9e51-f540209bc578
+- first one (Oct 21,2024) where I uploaded the nGPT paper, RoPE paper, hilbert curve.
+- generated images and tried to make comparisons between priors
+
 <img src="./assets/ngpt-table1.png" width="350px"></img>
 
 ## nGPT (normalized GPT) - Pytorch
