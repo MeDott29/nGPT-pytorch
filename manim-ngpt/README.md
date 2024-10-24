@@ -2,7 +2,8 @@
 
 ## Prerequisite Notebooks
 1. `01_vectors_and_norms.ipynb`
-   - Basic vector operations
+   - Basic vector operations 
+     - [vector on a hypersphere animation script](./l2-norm-visualization.py)
    - Understanding L2 norm
    - Visualization of vector normalization
    - Exercises with PyTorch vector operations
