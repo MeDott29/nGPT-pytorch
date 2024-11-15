@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 import pytest
 import numpy as np
-from token_agan1 import TokenAGAN, TokenGeneratorNet, TokenDiscriminatorNet
+from token-agan1 import TokenAGAN, TokenGeneratorNet, TokenDiscriminatorNet
 
 @pytest.fixture
 def model_params():
