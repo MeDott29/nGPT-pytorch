@@ -1,3 +1,11 @@
+import os
+import logging
+from datetime import datetime
+
+# Set up logging
+logging.basicConfig(filename='training.log', level=logging.INFO)
+logger = logging.getLogger()
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -286,7 +294,7 @@ def main():
     batch_size = 32
     save_interval = 5
     
-    print("Starting training...")
+    logger.info("Starting training...")
     
     # Training loop
     for epoch in range(num_epochs):
@@ -297,17 +305,31 @@ def main():
         # Train step
         d_loss, g_loss = agan.train_step(real_keys, real_values)
         
-        print(f"Epoch {epoch}: D Loss = {d_loss:.4f}, G Loss = {g_loss:.4f}")
+        logger.info(f"Epoch {epoch}: D Loss = {d_loss:.4f}, G Loss = {g_loss:.4f}")
         
         # Save visualization periodically
         if epoch % save_interval == 0:
             keys, values = agan.generate(num_samples=1)
             save_path = output_dir / f"epoch_{epoch:03d}.png"
             visualize_embeddings(keys, values, epoch, save_path)
-    
+        
+        # Save model checkpoint
+        if epoch % save_interval == 0:
+            checkpoint_path = output_dir / f"checkpoint_epoch_{epoch:03d}.pth"
+            torch.save({
+                'epoch': epoch,
+                'generator_state_dict': agan.generator.state_dict(),
+                'discriminator_state_dict': agan.discriminator.state_dict(),
+                'g_optimizer_state_dict': agan.g_optimizer.state_dict(),
+                'd_optimizer_state_dict': agan.d_optimizer.state_dict(),
+                'g_losses': agan.g_losses,
+                'd_losses': agan.d_losses
+            }, checkpoint_path)
+            logger.info(f"Saved checkpoint at epoch {epoch} to {checkpoint_path}")
+
     # Create final animation
     create_animation(output_dir, output_dir / "training.gif")
-    print("Training complete! Animation saved to outputs/training.gif")
+    logger.info("Training complete! Animation saved to outputs/training.gif")
 
 if __name__ == "__main__":
     main()
