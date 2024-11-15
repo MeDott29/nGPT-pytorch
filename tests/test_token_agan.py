@@ -29,7 +29,7 @@ def test_generator_output_shape(agan, model_params):
 
 def test_generator_normalization(agan, model_params):
     batch_size = 16
-    z = torch.randn(batch_size, model_params['latent_dim'])
+    z = torch.randn(batch_size, model_params['latent_dim']).to(agan.device)
     keys, values = agan.generator(z)
     
     # Check if vectors are normalized (unit length)
@@ -47,7 +47,7 @@ def test_discriminator_real_fake_separation(agan, model_params):
     real_values = F.normalize(torch.randn(batch_size, model_params['num_tokens'], model_params['out_features']), dim=-1).to(agan.device)
     
     # Generate fake data
-    z = torch.randn(batch_size, model_params['latent_dim'])
+    z = torch.randn(batch_size, model_params['latent_dim']).to(agan.device)
     fake_keys, fake_values = agan.generator(z)
     
     # Get discriminator predictions
