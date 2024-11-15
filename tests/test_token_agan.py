@@ -21,7 +21,7 @@ def agan(model_params):
 
 def test_generator_output_shape(agan, model_params):
     batch_size = 16
-    z = torch.randn(batch_size, model_params['latent_dim'])
+    z = torch.randn(batch_size, model_params['latent_dim']).to(agan.device)
     keys, values = agan.generator(z)
     
     assert keys.shape == (batch_size, model_params['num_tokens'], model_params['in_features'])
@@ -43,8 +43,8 @@ def test_discriminator_real_fake_separation(agan, model_params):
     batch_size = 100
     
     # Generate "real" data (normalized random vectors)
-    real_keys = F.normalize(torch.randn(batch_size, model_params['num_tokens'], model_params['in_features']), dim=-1)
-    real_values = F.normalize(torch.randn(batch_size, model_params['num_tokens'], model_params['out_features']), dim=-1)
+    real_keys = F.normalize(torch.randn(batch_size, model_params['num_tokens'], model_params['in_features']), dim=-1).to(agan.device)
+    real_values = F.normalize(torch.randn(batch_size, model_params['num_tokens'], model_params['out_features']), dim=-1).to(agan.device)
     
     # Generate fake data
     z = torch.randn(batch_size, model_params['latent_dim'])
@@ -73,7 +73,7 @@ def test_discriminator_real_fake_separation(agan, model_params):
 
 def test_generator_diversity(agan, model_params):
     num_samples = 100
-    z = torch.randn(num_samples, model_params['latent_dim'])
+    z = torch.randn(num_samples, model_params['latent_dim']).to(agan.device)
     keys, values = agan.generator(z)
     
     # Compute pairwise cosine similarities
