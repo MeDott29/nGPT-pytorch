@@ -131,6 +131,9 @@ class TokenAGAN:
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         print(f"Using device: {self.device}")
         
+        # Disable torch compile to avoid circular imports
+        torch._dynamo.config.disable()
+        
         # Initialize networks
         self.generator = TokenGeneratorNet(
             latent_dim=latent_dim,
