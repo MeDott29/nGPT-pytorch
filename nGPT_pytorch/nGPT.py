@@ -44,15 +44,14 @@ def l2norm(
     eps = None,
     groups = 1
 ):
-    eps = default(eps, 1e-5 if t.dtype == torch.float16 else 1e-10)
-
     if groups > 1:
         t = t.chunk(groups, dim = dim)
         t = torch.stack(t)
 
     if norm_eps == 0.:
-        out = F.normalize(t, dim = dim, p = 2, eps = eps)
+        out = F.normalize(t, dim = dim, p = 2)
     else:
+        eps = default(eps, 1e-5 if t.dtype == torch.float16 else 1e-10)
         norm = t.norm(dim = dim, keepdim = True)
         target_norm = norm.detach().clamp(min = 1. - norm_eps, max = 1. + norm_eps)
         divisor = norm / target_norm
@@ -90,17 +89,30 @@ class Residual(Module):
         fn: Module,
         dim: int,
         init: float,
-        scale: float
+        scale: float | None = None,
+        groups = 1,
+        norm_eps = 0.
     ):
         super().__init__()
         self.fn = fn
         self.branch_scale = Scale(dim, init, default(scale, dim ** -0.5))
+        self.l2norm = L2Norm(dim = -1, norm_eps = norm_eps, groups = groups)
 
     def forward(self, x, **kwargs):
         residual = x
 
-        branch_out = l2norm(self.fn(x, **kwargs))
-        out = l2norm(residual.lerp(branch_out, self.branch_scale()))
+        out = self.fn(x, **kwargs)
+
+        tuple_output = isinstance(out, tuple)
+
+        if tuple_output:
+            out, *rest = out
+
+        out = self.l2norm(out)
+        out = self.l2norm(residual.lerp(out, self.branch_scale()))
+
+        if tuple_output:
+            out = (out, *rest)
 
         return out
 
@@ -176,10 +188,11 @@ class Attention(Module):
         flash_kwargs: dict = dict(
             enable_flash = True,
             enable_math = True,
-            enable_mem_efficient = True
+            enable_mem_efficient = True,
+            enable_cudnn = True
         ),
         norm_eps = 0.,
-        num_hyperspheres = 1
+        num_hyperspheres = 1,
     ):
         super().__init__()
         self.heads = heads
@@ -202,15 +215,10 @@ class Attention(Module):
         sdpa_backends = [SDP_BACKEND_MAP[enable_str] for enable_str, enable in flash_kwargs.items() if enable]
         self.sdpa_context_manager = partial(torch.nn.attention.sdpa_kernel, sdpa_backends)
 
-        # rotary 
-
-        self.rotary_emb = RotaryEmbedding(dim_head)
-
         # qk rmsnorm + scale
 
         self.norm_qk = norm_qk
-        self.q_scale = Scale(dim, s_qk_init, default(s_qk_scale, dim ** -0.5))
-        self.k_scale = Scale(dim, s_qk_init, default(s_qk_scale, dim ** -0.5))
+        self.qk_scale = Scale(dim_inner, s_qk_init, default(s_qk_scale, dim ** -1))
 
         self.split_heads = Rearrange('b n (h d) -> b h n d', h = heads)
         self.merge_heads = Rearrange('b h n d -> b n (h d)')
@@ -220,13 +228,27 @@ class Attention(Module):
     def forward(
         self,
         x,
-        mask = None
+        mask = None,
+        rotary_embed: Module | None = None,
+        value_residual = None,
+        return_values = False
     ):
         q, k, v = self.to_q(x), self.to_k(x), self.to_v(x)
 
         # split heads
 
         q, k, v = map(self.split_heads, (q, k, v))
+
+        # maybe value residual, from resformer paper
+
+        if exists(value_residual):
+            v = 0.5 * (v + value_residual)
+
+        # rotary positions
+
+        if exists(rotary_embed):
+            q = rotary_embed.rotate_queries_or_keys(q)
+            k = rotary_embed.rotate_queries_or_keys(k)
 
         # maybe query key norm
 
@@ -235,17 +257,13 @@ class Attention(Module):
 
         # scaling queries and keys - this would line up with the popular use of qk rmsnorm from google deepmind and now black forest labs - will use multihead rmsnorm
 
-        q = q * rearrange(self.q_scale(), '(h d) -> h 1 d', h = self.heads)
-        k = k * rearrange(self.k_scale(), '(h d) -> h 1 d', h = self.heads)
-
-        # rotary positions
-
-        q = self.rotary_emb.rotate_queries_or_keys(q)
-        k = self.rotary_emb.rotate_queries_or_keys(k)
+        q = q * rearrange(self.qk_scale(), '(h d) -> h 1 d', h = self.heads)
 
         # for non-autoregressive masking
 
         if exists(mask):
+            row_all_masked_out = ~mask.any(dim = -1)
+
             mask = rearrange(mask, 'b j -> b 1 1 j')
 
         # scale is sqrt(dk)
@@ -259,7 +277,15 @@ class Attention(Module):
             )
 
         out = self.merge_heads(out)
-        return self.to_out(out)
+        out = self.to_out(out)
+
+        if exists(mask) and row_all_masked_out.any():
+            out = out.masked_fill(row_all_masked_out[:, None, None], 0.)
+
+        if not return_values:
+            return out
+
+        return out, v
 
 # feedforward
 
@@ -318,6 +344,7 @@ class nGPT(Module):
         tied_embedding = False,
         num_hyperspheres = 1,
         causal = True,
+        add_value_residual = True,
         # below are all the scale related hyperparameters, for controlling effective relative learning rates throughout the network
         alpha_init: float | None = None,  # this would set the alpha init for all residuals, but would be overridden by alpha_attn_init and alpha_ff_init if they are specified
         s_logit_init: float  = 1.,
@@ -347,7 +374,11 @@ class nGPT(Module):
         self.causal = causal
         alpha_init = default(alpha_init, 1. / depth)
 
+        self.add_value_residual = add_value_residual # https://arxiv.org/abs/2410.17897v1
+
         self.token_embed = NormLinear_(dim, num_tokens)
+
+        self.rotary_embed = RotaryEmbedding(dim_head)
 
         self.layers = ModuleList([])
 
@@ -435,13 +466,21 @@ class nGPT(Module):
 
             module.norm_weights_()
 
+    def register_step_post_hook(self, optimizer):
+        assert hasattr(optimizer, 'register_step_post_hook')
+
+        def hook(*_):
+            self.norm_weights_()
+
+        return optimizer.register_step_post_hook(hook)
+
     def forward(
         self,
         ids,
         mask = None,
         return_loss = False
     ):
-        token_embed = self.token_embed.weight
+        token_embed, rotary_embed = self.token_embed.weight, self.rotary_embed
 
         if return_loss:
             assert self.causal
@@ -449,8 +488,13 @@ class nGPT(Module):
 
         tokens = token_embed[ids]
 
+        first_values = None
+
         for attn, ff in self.layers:
-            tokens = attn(tokens, mask = mask)
+            tokens, values = attn(tokens, mask = mask, rotary_embed = rotary_embed, return_values = True, value_residual = first_values if self.add_value_residual else None)
+
+            first_values = default(first_values, values)
+
             tokens = ff(tokens)
 
         if exists(self.to_logits):

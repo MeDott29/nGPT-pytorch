@@ -44,15 +44,14 @@ def l2norm(
     eps = None,
     groups = 1
 ):
-    eps = default(eps, 1e-5 if t.dtype == torch.float16 else 1e-10)
-
     if groups > 1:
         t = t.chunk(groups, dim = dim)
         t = torch.stack(t)
 
     if norm_eps == 0.:
-        out = F.normalize(t, dim = dim, p = 2, eps = eps)
+        out = F.normalize(t, dim = dim, p = 2)
     else:
+        eps = default(eps, 1e-5 if t.dtype == torch.float16 else 1e-10)
         norm = t.norm(dim = dim, keepdim = True)
         target_norm = norm.detach().clamp(min = 1. - norm_eps, max = 1. + norm_eps)
         divisor = norm / target_norm
@@ -99,11 +98,20 @@ class Residual(Module):
     def forward(self, x, **kwargs):
         residual = x
 
-        branch_out = l2norm(self.fn(x, **kwargs))
+        branch_out = self.fn(x, **kwargs)
 
+        is_tuple_output = isinstance(branch_out, tuple)
+
+        if is_tuple_output:
+            branch_out, *rest = branch_out
+
+        branch_out = l2norm(branch_out)
         not_ortho = einsum(branch_out, residual, '... d, ... d -> ...').square().mean()
 
         out = l2norm(residual.lerp(branch_out, self.branch_scale()))
+
+        if is_tuple_output:
+            out = (out, *rest)
 
         return out, not_ortho
 
@@ -179,10 +187,12 @@ class Attention(Module):
         flash_kwargs: dict = dict(
             enable_flash = True,
             enable_math = True,
-            enable_mem_efficient = True
+            enable_mem_efficient = True,
+            enable_cudnn = True
         ),
         norm_eps = 0.,
-        num_hyperspheres = 1
+        num_hyperspheres = 1,
+        mask_value = None
     ):
         super().__init__()
         self.heads = heads
@@ -212,8 +222,7 @@ class Attention(Module):
         # qk rmsnorm + scale
 
         self.norm_qk = norm_qk
-        self.q_scale = Scale(dim, s_qk_init, default(s_qk_scale, dim ** -0.5))
-        self.k_scale = Scale(dim, s_qk_init, default(s_qk_scale, dim ** -0.5))
+        self.qk_scale = Scale(dim_inner, s_qk_init, default(s_qk_scale, dim ** -1))
 
         self.split_heads = Rearrange('b n (h d) -> b h n d', h = heads)
         self.merge_heads = Rearrange('b h n d -> b n (h d)')
@@ -223,13 +232,24 @@ class Attention(Module):
     def forward(
         self,
         x,
-        mask = None
+        mask = None,
+        value_residual = None
     ):
         q, k, v = self.to_q(x), self.to_k(x), self.to_v(x)
 
         # split heads
 
         q, k, v = map(self.split_heads, (q, k, v))
+
+        # value residual - https://arxiv.org/abs/2410.17897
+
+        if exists(value_residual):
+            v = 0.5 * (v + value_residual)
+
+        # rotary positions
+
+        q = self.rotary_emb.rotate_queries_or_keys(q)
+        k = self.rotary_emb.rotate_queries_or_keys(k)
 
         # maybe query key norm
 
@@ -238,13 +258,7 @@ class Attention(Module):
 
         # scaling queries and keys - this would line up with the popular use of qk rmsnorm from google deepmind and now black forest labs - will use multihead rmsnorm
 
-        q = q * rearrange(self.q_scale(), '(h d) -> h 1 d', h = self.heads)
-        k = k * rearrange(self.k_scale(), '(h d) -> h 1 d', h = self.heads)
-
-        # rotary positions
-
-        q = self.rotary_emb.rotate_queries_or_keys(q)
-        k = self.rotary_emb.rotate_queries_or_keys(k)
+        q = q * rearrange(self.qk_scale(), '(h d) -> h 1 d', h = self.heads)
 
         # for non-autoregressive masking
 
@@ -262,7 +276,7 @@ class Attention(Module):
             )
 
         out = self.merge_heads(out)
-        return self.to_out(out)
+        return self.to_out(out), v
 
 # feedforward
 
@@ -395,7 +409,7 @@ class nGPT(Module):
                 s_qk_scale = s_qk_scale_,
                 flash_kwargs = attn_flash_kwargs,
                 norm_eps = norm_eps,
-                num_hyperspheres = num_hyperspheres
+                num_hyperspheres = num_hyperspheres,
             )
 
             ff = FeedForward(
@@ -461,11 +475,15 @@ class nGPT(Module):
 
         tokens = token_embed[ids]
 
+        value_residual = None
+
         aux_loss = 0.
 
         for attn, ff in self.layers:
-            tokens, ortho_loss = attn(tokens, mask = mask)
+            (tokens, values), ortho_loss = attn(tokens, mask = mask, value_residual = value_residual)
             aux_loss = aux_loss + ortho_loss
+
+            value_residual = default(value_residual, values)
 
             tokens, ortho_loss = ff(tokens)
             aux_loss = aux_loss + ortho_loss

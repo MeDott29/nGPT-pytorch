@@ -44,15 +44,15 @@ def l2norm(
     eps = None,
     groups = 1
 ):
-    eps = default(eps, 1e-5 if t.dtype == torch.float16 else 1e-10)
 
     if groups > 1:
         t = t.chunk(groups, dim = dim)
         t = torch.stack(t)
 
     if norm_eps == 0.:
-        out = F.normalize(t, dim = dim, p = 2, eps = eps)
+        out = F.normalize(t, dim = dim, p = 2)
     else:
+        eps = default(eps, 1e-5 if t.dtype == torch.float16 else 1e-10)
         norm = t.norm(dim = dim, keepdim = True)
         target_norm = norm.detach().clamp(min = 1. - norm_eps, max = 1. + norm_eps)
         divisor = norm / target_norm
@@ -154,10 +154,12 @@ class Attention(Module):
         flash_kwargs: dict = dict(
             enable_flash = True,
             enable_math = True,
-            enable_mem_efficient = True
+            enable_mem_efficient = True,
+            enable_cudnn = True
         ),
         norm_eps = 0.,
-        num_hyperspheres = 1
+        num_hyperspheres = 1,
+        rotary_embed = True
     ):
         super().__init__()
         self.heads = heads
@@ -182,13 +184,12 @@ class Attention(Module):
 
         # rotary 
 
-        self.rotary_emb = RotaryEmbedding(dim_head)
+        self.rotary_emb = RotaryEmbedding(dim_head) if rotary_embed else None
 
         # qk rmsnorm + scale
 
         self.norm_qk = norm_qk
-        self.q_scale = Scale(dim, s_qk_init, default(s_qk_scale, dim ** -0.5))
-        self.k_scale = Scale(dim, s_qk_init, default(s_qk_scale, dim ** -0.5))
+        self.qk_scale = Scale(dim_inner, s_qk_init, default(s_qk_scale, dim ** -1))
 
         self.split_heads = Rearrange('b n (h d) -> b h n d', h = heads)
         self.merge_heads = Rearrange('b h n d -> b n (h d)')
@@ -206,6 +207,12 @@ class Attention(Module):
 
         q, k, v = map(self.split_heads, (q, k, v))
 
+        # rotary positions
+
+        if exists(self.rotary_emb):
+            q = self.rotary_emb.rotate_queries_or_keys(q)
+            k = self.rotary_emb.rotate_queries_or_keys(k)
+
         # maybe query key norm
 
         if self.norm_qk:
@@ -213,13 +220,7 @@ class Attention(Module):
 
         # scaling queries and keys - this would line up with the popular use of qk rmsnorm from google deepmind and now black forest labs - will use multihead rmsnorm
 
-        q = q * rearrange(self.q_scale(), '(h d) -> h 1 d', h = self.heads)
-        k = k * rearrange(self.k_scale(), '(h d) -> h 1 d', h = self.heads)
-
-        # rotary positions
-
-        q = self.rotary_emb.rotate_queries_or_keys(q)
-        k = self.rotary_emb.rotate_queries_or_keys(k)
+        q = q * rearrange(self.qk_scale(), '(h d) -> h 1 d', h = self.heads)
 
         # for non-autoregressive masking
 
@@ -295,6 +296,7 @@ class nTransformer(Module):
         tied_embedding = False,
         num_hyperspheres = 1,
         causal = True,
+        rotary_embed = False,
         # below are all the scale related hyperparameters, for controlling effective relative learning rates throughout the network
         alpha_init: float | None = None,  # this would set the alpha init for all residuals, but would be overridden by alpha_attn_init and alpha_ff_init if they are specified
         s_logit_init: float  = 1.,
@@ -364,7 +366,8 @@ class nTransformer(Module):
                 s_qk_scale = s_qk_scale_,
                 flash_kwargs = attn_flash_kwargs,
                 norm_eps = norm_eps,
-                num_hyperspheres = num_hyperspheres
+                num_hyperspheres = num_hyperspheres,
+                rotary_embed = rotary_embed
             )
 
             ff = FeedForward(
@@ -426,11 +429,11 @@ class nTransformer(Module):
 if __name__ == '__main__':
 
     transformer = nTransformer(
-        dim = 512,
+        dim = 256,
         depth = 4
     )
 
-    x = torch.randn(1, 1024, 512)
+    x = torch.randn(2, 1024, 256)
 
     embed = transformer(x, norm_input = True)
     assert x.shape == embed.shape

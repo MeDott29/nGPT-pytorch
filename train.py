@@ -3,10 +3,12 @@ import gzip
 import random
 import tqdm
 import numpy as np
+from contextlib import nullcontext
 
 import torch
 from torch.optim import Adam
 from torch import Tensor
+from torch.amp import GradScaler
 from torch.utils.data import DataLoader, Dataset
 import torch.nn.utils.parametrize as parametrize
 
@@ -24,7 +26,12 @@ GENERATE_EVERY = 500
 GENERATE_LENGTH = 512
 SEQ_LEN = 512
 
+USE_AMP = True
+USE_PARAMETRIZE = True # whether to manually update weights after each optimizer step
+
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
+assert not (USE_AMP and not torch.cuda.is_available())
 
 # helpers
 
@@ -91,9 +98,13 @@ model = nGPT(
     num_tokens = 256,
     dim = 512,
     depth = 8,
-    manual_norm_weights = True,
-    tied_embedding = True
+    tied_embedding = True,
+    add_value_residual = True,
+    attn_norm_qk = False,
+    manual_norm_weights = not USE_PARAMETRIZE
 ).to(device)
+
+scaler = GradScaler(enabled = USE_AMP)
 
 # prepare enwik8 data
 
@@ -128,6 +139,11 @@ optim = Adam(model.parameters(), lr = LEARNING_RATE)
 train_loader = cycle(train_loader)
 val_loader = cycle(val_loader)
 
+# if not using parametrize, register normalizing on optimizer step
+
+if not USE_PARAMETRIZE:
+    model.register_step_post_hook(optim)
+
 # training
 
 for i in tqdm.tqdm(range(NUM_BATCHES), mininterval = 10.0, desc = "training"):
@@ -136,16 +152,17 @@ for i in tqdm.tqdm(range(NUM_BATCHES), mininterval = 10.0, desc = "training"):
     for _ in range(GRAD_ACCUM_EVERY):
         data = next(train_loader)
 
-        loss = model(data, return_loss = True)
+        with torch.autocast(device_type = 'cuda',  dtype = torch.float16, enabled = USE_AMP):
+            loss = model(data, return_loss = True)
 
-        (loss / GRAD_ACCUM_EVERY).backward()
+        scaler.scale(loss / GRAD_ACCUM_EVERY).backward()
 
     print(f"training loss: {loss.item():.3f}")
 
-    optim.step()
-    optim.zero_grad()
+    scaler.step(optim)
+    scaler.update()
 
-    model.norm_weights_()
+    optim.zero_grad()
 
     if i % VALIDATE_EVERY == 0:
         model.eval()
