@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>nTransformer Training Demo</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
+    <script>
+        // nTransformer implementation
+        const exists = (v) => v !== null && v !== undefined;
+        const defaultTo = (v, d) => exists(v) ? v : d;
+
+        const l2norm = (tensor, dim = -1, normEps = 0, groups = 1) => {
+            const norm = Math.sqrt(tensor.reduce((acc, val) => acc + val * val, 0));
+            return tensor.map(val => val / (norm + 1e-6));
+        };
+
+        class Scale {
+            constructor(dim, init = 1.0, scale = 1.0) {
+                this.scale = new Array(dim).fill(scale);
+                this.forwardScale = init / scale;
+            }
+
+            forward() {
+                return this.scale.map(s => s * this.forwardScale);
+            }
+        }
+
+        class Attention {
+            constructor({dim, dimHead = 64, heads = 8, normQk = true}) {
+                this.heads = heads;
+                this.dimHead = dimHead;
+                this.normQk = normQk;
+                this.attnScale = Math.sqrt(dimHead);
+                
+                const dimInner = dimHead * heads;
+                this.Wq = this.initializeWeight(dim, dimInner);
+                this.Wk = this.initializeWeight(dim, dimInner);
+                this.Wv = this.initializeWeight(dim, dimInner);
+                this.Wo = this.initializeWeight(dimInner, dim);
+                
+                this.qkScale = new Scale(dimInner, 1.0, 1/Math.sqrt(dim));
+            }
+
+            initializeWeight(inDim, outDim) {
+                const scale = Math.sqrt(1/inDim);
+                return Array(outDim).fill().map(() => 
+                    Array(inDim).fill().map(() => (Math.random() - 0.5) * 2 * scale)
+                );
+            }
+
+            matMul(a, b) {
+                const result = Array(a.length).fill(0);
+                for (let i = 0; i < a.length; i++) {
+                    for (let j = 0; j < b.length; j++) {
+                        result[i] += a[i] * b[j];
+                    }
+                }
+                return result;
+            }
+
+            forward(x) {
+                let q = this.matMul(this.Wq, x);
+                let k = this.matMul(this.Wk, x);
+                const v = this.matMul(this.Wv, x);
+
+                if (this.normQk) {
+                    q = l2norm(q);
+                    k = l2norm(k);
+                }
+
+                const qkScale = this.qkScale.forward();
+                const scaledQ = q.map(x => x * qkScale[0]);
+
+                let scores = [];
+                for (let i = 0; i < scaledQ.length; i++) {
+                    scores[i] = k.map(kj => 
+                        scaledQ[i] * kj / this.attnScale
+                    );
+                }
+
+                const attnWeights = scores.map(row => {
+                    const maxScore = Math.max(...row);
+                    const expScores = row.map(s => Math.exp(s - maxScore));
+                    const sumExp = expScores.reduce((a, b) => a + b, 0);
+                    return expScores.map(s => s / sumExp);
+                });
+
+                const attnOut = attnWeights.map(weights => 
+                    v.map((_, j) => 
+                        weights.reduce((sum, w, i) => sum + w * v[i][j], 0)
+                    )
+                );
+
+                return this.matMul(this.Wo, attnOut);
+            }
+        }
+
+        class FeedForward {
+            constructor({dim, expandFactor = 4}) {
+                this.dim = dim;
+                const dimInner = Math.floor(dim * expandFactor * 2/3);
+
+                this.Wu = this.initializeWeight(dim, dimInner);
+                this.Wv = this.initializeWeight(dim, dimInner);
+                this.Wo = this.initializeWeight(dimInner, dim);
+
+                this.hiddenScale = new Scale(dimInner, 1.0, 1.0);
+                this.gateScale = new Scale(dimInner, 1.0, 1.0);
+            }
+
+            initializeWeight(inDim, outDim) {
+                const scale = Math.sqrt(1/inDim);
+                return Array(outDim).fill().map(() => 
+                    Array(inDim).fill().map(() => (Math.random() - 0.5) * 2 * scale)
+                );
+            }
+
+            silu(x) {
+                return x * (1 / (1 + Math.exp(-x)));
+            }
+
+            matMul(a, b) {
+                const result = Array(a.length).fill(0);
+                for (let i = 0; i < a.length; i++) {
+                    for (let j = 0; j < b.length; j++) {
+                        result[i] += a[i] * b[j];
+                    }
+                }
+                return result;
+            }
+
+            forward(x) {
+                const u = this.matMul(this.Wu, x);
+                const v = this.matMul(this.Wv, x);
+
+                const hiddenScale = this.hiddenScale.forward();
+                const gateScale = this.gateScale.forward();
+
+                const hidden = u.map((val, i) => val * hiddenScale[i]);
+                const gate = v.map((val, i) => val * gateScale[i] * Math.sqrt(this.dim));
+
+                const activated = hidden.map((h, i) => h * this.silu(gate[i]));
+                return this.matMul(this.Wo, activated);
+            }
+        }
+
+        class nTransformer {
+            constructor({dim, depth, dimHead = 64, heads = 8}) {
+                this.dim = dim;
+                this.layers = [];
+                const alphaInit = 1 / depth;
+
+                for (let i = 0; i < depth; i++) {
+                    const attn = new Attention({dim, dimHead, heads});
+                    const ff = new FeedForward({dim});
+                    const attnInterp = new Scale(dim, alphaInit, 1/Math.sqrt(dim));
+                    const ffInterp = new Scale(dim, alphaInit, 1/Math.sqrt(dim));
+                    this.layers.push([attn, ff, attnInterp, ffInterp]);
+                }
+            }
+
+            forward(tokens) {
+                let x = l2norm([...tokens]);
+
+                for (const [attn, ff, attnAlpha, ffAlpha] of this.layers) {
+                    const attnOut = l2norm(attn.forward(x));
+                    const attnScale = attnAlpha.forward();
+                    x = l2norm(x.map((xi, i) => xi + attnScale[i] * (attnOut[i] - xi)));
+
+                    const ffOut = l2norm(ff.forward(x));
+                    const ffScale = ffAlpha.forward();
+                    x = l2norm(x.map((xi, i) => xi + ffScale[i] * (ffOut[i] - xi)));
+                }
+
+                return x;
+            }
+        }
+
+        // Training utilities
+        function generateTrainingData(numSamples, dim) {
+            return Array(numSamples).fill().map(() => ({
+                input: Array(dim).fill().map(() => Math.random() - 0.5),
+                target: Array(dim).fill().map(() => Math.random() - 0.5)
+            }));
+        }
+
+        function computeLoss(output, target) {
+            return output.reduce((acc, val, i) => 
+                acc + Math.pow(val - target[i], 2), 0) / output.length;
+        }
+
+        let model;
+        let trainingChart;
+        let isTraining = false;
+        const losses = [];
+
+        function initializeChart() {
+            const ctx = document.getElementById('trainingChart').getContext('2d');
+            trainingChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Training Loss',
+                        data: [],
+                        borderColor: 'rgb(75, 192, 192)',
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        async function startTraining() {
+            if (isTraining) return;
+            isTraining = true;
+
+            const dim = parseInt(document.getElementById('modelDim').value);
+            const depth = parseInt(document.getElementById('modelDepth').value);
+            const batchSize = parseInt(document.getElementById('batchSize').value);
+            const epochs = parseInt(document.getElementById('epochs').value);
+
+            model = new nTransformer({
+                dim: dim,
+                depth: depth,
+                dimHead: 32,
+                heads: 2
+            });
+
+            losses.length = 0;
+            trainingChart.data.labels = [];
+            trainingChart.data.datasets[0].data = [];
+
+            document.getElementById('startButton').disabled = true;
+            document.getElementById('stopButton').disabled = false;
+
+            for (let epoch = 0; epoch < epochs && isTraining; epoch++) {
+                const batchData = generateTrainingData(batchSize, dim);
+                let epochLoss = 0;
+
+                for (const {input, target} of batchData) {
+                    const output = model.forward(input);
+                    epochLoss += computeLoss(output, target);
+                }
+
+                epochLoss /= batchSize;
+                losses.push(epochLoss);
+
+                trainingChart.data.labels.push(epoch + 1);
+                trainingChart.data.datasets[0].data.push(epochLoss);
+                trainingChart.update('none');
+
+                document.getElementById('currentLoss').textContent = 
+                    `Current Loss: ${epochLoss.toFixed(4)}`;
+
+                // Allow UI updates
+                await new Promise(resolve => setTimeout(resolve, 0));
+            }
+
+            document.getElementById('startButton').disabled = false;
+            document.getElementById('stopButton').disabled = true;
+            isTraining = false;
+        }
+
+        function stopTraining() {
+            isTraining = false;
+            document.getElementById('startButton').disabled = false;
+            document.getElementById('stopButton').disabled = true;
+        }
+
+        window.onload = function() {
+            initializeChart();
+        };
+    </script>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold mb-6">nTransformer Training Demo</h1>
+        
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4">Model Configuration</h2>
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Model Dimension:</label>
+                    <input type="number" id="modelDim" value="64" min="16" max="512" 
+                           class="mt-1 block w-full rounded border-gray-300 shadow-sm" />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Model Depth:</label>
+                    <input type="number" id="modelDepth" value="2" min="1" max="12"
+                           class="mt-1 block w-full rounded border-gray-300 shadow-sm" />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Batch Size:</label>
+                    <input type="number" id="batchSize" value="32" min="1" max="128"
+                           class="mt-1 block w-full rounded border-gray-300 shadow-sm" />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Epochs:</label>
+                    <input type="number" id="epochs" value="100" min="1" max="1000"
+                           class="mt-1 block w-full rounded border-gray-300 shadow-sm" />
+                </div>
+            </div>
+            <div class="flex gap-4">
+                <button id="startButton" onclick="startTraining()"
+                        class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                    Start Training
+                </button>
+                <button id="stopButton" onclick="stopTraining()" disabled
+                        class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">
+                    Stop Training
+                </button>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h2 class="text-xl font-semibold mb-4">Training Progress</h2>
+            <div id="currentLoss" class="text-lg font-medium mb-4">Current Loss: 0.0000</div>
+            <canvas id="trainingChart"></canvas>
+        </div>
+    </div>
+</body>
+</html>
