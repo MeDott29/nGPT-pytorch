@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MetaSandplot System</title>
+    
+    <!-- Import Tailwind CSS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.js"></script>
+    
+    <style>
+        .connection-status {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        
+        .connection-status.connected {
+            background-color: #10B981;
+        }
+        
+        .connection-status.disconnected {
+            background-color: #EF4444;
+        }
+        
+        .activity-log {
+            height: 300px;
+            overflow-y: auto;
+        }
+        
+        .stat-card {
+            transition: transform 0.2s;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-2px);
+        }
+        
+        #sandplotCanvas {
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-gray-100 p-8">
+    <div class="max-w-7xl mx-auto">
+        <!-- Header -->
+        <header class="mb-8">
+            <h1 class="text-3xl font-bold text-gray-900">MetaSandplot System</h1>
+            <div class="flex items-center mt-2">
+                <span id="connectionStatus" class="connection-status disconnected"></span>
+                <span id="connectionText" class="text-sm text-gray-600">Disconnected</span>
+            </div>
+        </header>
+
+        <!-- Main Grid Layout -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Sandplot Section -->
+            <div class="lg:col-span-2">
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <h2 class="text-xl font-semibold mb-4">Live Sandplot</h2>
+                    <canvas 
+                        id="sandplotCanvas" 
+                        class="w-full bg-white"
+                        width="800"
+                        height="600">
+                    </canvas>
+                </div>
+            </div>
+
+            <!-- Sidebar -->
+            <div class="space-y-8">
+                <!-- Network Activity -->
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <h2 class="text-xl font-semibold mb-4">Network Activity</h2>
+                    <div id="activityLog" class="activity-log space-y-2"></div>
+                </div>
+
+                <!-- Statistics -->
+                <div class="grid grid-cols-1 gap-4">
+                    <div class="stat-card bg-white rounded-lg shadow-lg p-6">
+                        <h3 class="text-sm font-medium text-gray-500">Messages Processed</h3>
+                        <p id="messageCount" class="mt-2 text-3xl font-semibold text-gray-900">0</p>
+                    </div>
+                    <div class="stat-card bg-white rounded-lg shadow-lg p-6">
+                        <h3 class="text-sm font-medium text-gray-500">Data Processed</h3>
+                        <p id="dataProcessed" class="mt-2 text-3xl font-semibold text-gray-900">0 MB</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class MetaSandplotClient {
+            constructor() {
+                this.ws = null;
+                this.messageCount = 0;
+                this.canvas = document.getElementById('sandplotCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.connect();
+                
+                // Resize canvas for HD resolution
+                this.resizeCanvas();
+                window.addEventListener('resize', () => this.resizeCanvas());
+            }
+
+            connect() {
+                this.ws = new WebSocket('ws://localhost:8765');
+                
+                this.ws.onopen = () => {
+                    this.updateConnectionStatus(true);
+                };
+                
+                this.ws.onclose = () => {
+                    this.updateConnectionStatus(false);
+                    setTimeout(() => this.connect(), 5000);
+                };
+                
+                this.ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    this.handleMessage(data);
+                };
+            }
+
+            updateConnectionStatus(connected) {
+                const status = document.getElementById('connectionStatus');
+                const text = document.getElementById('connectionText');
+                
+                status.className = `connection-status ${connected ? 'connected' : 'disconnected'}`;
+                text.textContent = connected ? 'Connected' : 'Disconnected';
+            }
+
+            resizeCanvas() {
+                const container = this.canvas.parentElement;
+                const ratio = window.devicePixelRatio || 1;
+                
+                this.canvas.width = container.clientWidth * ratio;
+                this.canvas.height = (container.clientWidth * 0.75) * ratio;
+                
+                this.canvas.style.width = `${container.clientWidth}px`;
+                this.canvas.style.height = `${container.clientWidth * 0.75}px`;
+            }
+
+            drawSandplot(params) {
+                const { density, point_size, prime_factors, color_variation } = params;
+                const width = this.canvas.width;
+                const height = this.canvas.height;
+                
+                this.ctx.clearRect(0, 0, width, height);
+                const numPoints = Math.floor(density * width * height / 100);
+                
+                for (let i = 0; i < numPoints; i++) {
+                    const x = Math.random() * width;
+                    const y = Math.random() * height;
+                    
+                    const colorSeed = (x * prime_factors[0] + y * prime_factors[1]) % prime_factors[2];
+                    const hue = (colorSeed / prime_factors[2] + Math.random() * color_variation) * 360;
+                    
+                    this.ctx.fillStyle = `hsl(${hue}, 70%, 50%)`;
+                    this.ctx.beginPath();
+                    this.ctx.arc(x, y, point_size, 0, Math.PI * 2);
+                    this.ctx.fill();
+                }
+            }
+
+            addActivityLog(message) {
+                const log = document.getElementById('activityLog');
+                const entry = document.createElement('div');
+                entry.className = 'text-sm text-gray-600';
+                
+                const time = new Date(message.timestamp * 1000).toLocaleTimeString();
+                entry.textContent = `${time} - ${message.dataset}: ${message.text_hash.slice(0, 8)}...`;
+                
+                log.insertBefore(entry, log.firstChild);
+                
+                // Limit log entries
+                while (log.children.length > 100) {
+                    log.removeChild(log.lastChild);
+                }
+            }
+
+            updateStats() {
+                document.getElementById('messageCount').textContent = this.messageCount;
+                document.getElementById('dataProcessed').textContent = 
+                    `${(this.messageCount * 0.5).toFixed(1)} MB`;
+            }
+
+            handleMessage(data) {
+                this.messageCount++;
+                this.drawSandplot(data.params);
+                this.addActivityLog(data);
+                this.updateStats();
+            }
+        }
+
+        // Initialize the client when the page loads
+        window.addEventListener('load', () => {
+            window.client = new MetaSandplotClient();
+        });
+    </script>
+</body>
+</html>
