@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MNIST Drawing Tool</title>
+    <style>
+        body {
+            font-family: monospace;
+            background: #1a1a1a;
+            color: #fff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+            padding: 20px;
+        }
+        .canvas-container {
+            border: 2px solid #444;
+            padding: 10px;
+            background: #2a2a2a;
+        }
+        #pixelCanvas {
+            display: grid;
+            grid-template-columns: repeat(16, 20px);
+            gap: 1px;
+            background: #333;
+            padding: 5px;
+        }
+        .pixel {
+            width: 20px;
+            height: 20px;
+            background: #000;
+            border: 1px solid #444;
+            cursor: pointer;
+        }
+        .pixel.active {
+            background: #fff;
+        }
+        .info-panel {
+            border: 2px solid #444;
+            padding: 20px;
+            background: #2a2a2a;
+            width: 200px;
+        }
+        .messages {
+            border: 2px solid #444;
+            padding: 10px;
+            margin-top: 20px;
+            min-height: 80px;
+            background: #222;
+        }
+        button {
+            background: #444;
+            color: #fff;
+            border: none;
+            padding: 8px 16px;
+            margin: 5px 0;
+            cursor: pointer;
+            width: 100%;
+        }
+        button:hover {
+            background: #555;
+        }
+        #grid {
+            display: grid;
+            grid-template-columns: repeat(34, 8px);
+            gap: 1px;
+            background: #333;
+            padding: 5px;
+            margin-top: 20px;
+        }
+        .grid-cell {
+            width: 8px;
+            height: 8px;
+            background: #000;
+        }
+        .grid-cell.filled {
+            background: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="canvas-container">
+            <div id="pixelCanvas"></div>
+            <div id="grid"></div>
+        </div>
+        <div class="info-panel">
+            <h3>MNIST Drawing Tool</h3>
+            <div>Images: <span id="imageCount">0</span>/1156</div>
+            <button onclick="saveToGrid()">Save to Grid (S)</button>
+            <button onclick="clearCanvas()">Clear Canvas (C)</button>
+            <button onclick="exportGrid()">Export Grid</button>
+            <div class="messages" id="messages"></div>
+        </div>
+    </div>
+
+    <script>
+        const CANVAS_SIZE = 16;
+        const GRID_SIZE = 34;
+        let canvas = Array(CANVAS_SIZE).fill().map(() => Array(CANVAS_SIZE).fill(false));
+        let grid = [];
+        let isDrawing = false;
+
+        function initializeCanvas() {
+            const pixelCanvas = document.getElementById('pixelCanvas');
+            for (let i = 0; i < CANVAS_SIZE; i++) {
+                for (let j = 0; j < CANVAS_SIZE; j++) {
+                    const pixel = document.createElement('div');
+                    pixel.className = 'pixel';
+                    pixel.dataset.row = i;
+                    pixel.dataset.col = j;
+                    pixel.addEventListener('mousedown', togglePixel);
+                    pixel.addEventListener('mouseover', (e) => {
+                        if (isDrawing) togglePixel(e);
+                    });
+                    pixelCanvas.appendChild(pixel);
+                }
+            }
+        }
+
+        function initializeGrid() {
+            const gridElement = document.getElementById('grid');
+            for (let i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
+                const cell = document.createElement('div');
+                cell.className = 'grid-cell';
+                gridElement.appendChild(cell);
+            }
+        }
+
+        function togglePixel(e) {
+            const row = parseInt(e.target.dataset.row);
+            const col = parseInt(e.target.dataset.col);
+            canvas[row][col] = !canvas[row][col];
+            e.target.classList.toggle('active');
+        }
+
+        function clearCanvas() {
+            canvas = Array(CANVAS_SIZE).fill().map(() => Array(CANVAS_SIZE).fill(false));
+            document.querySelectorAll('.pixel').forEach(pixel => pixel.classList.remove('active'));
+            addMessage('Canvas cleared');
+        }
+
+        function saveToGrid() {
+            if (grid.length >= GRID_SIZE * GRID_SIZE) {
+                addMessage('Grid is full!');
+                return;
+            }
+            grid.push(JSON.parse(JSON.stringify(canvas)));
+            updateGrid();
+            addMessage(`Added to grid (${grid.length}/${GRID_SIZE * GRID_SIZE})`);
+            clearCanvas();
+        }
+
+        function updateGrid() {
+            const cells = document.querySelectorAll('.grid-cell');
+            grid.forEach((canvas, index) => {
+                canvas.forEach((row, i) => {
+                    row.forEach((cell, j) => {
+                        if (cell) {
+                            cells[index].classList.add('filled');
+                        }
+                    });
+                });
+            });
+            document.getElementById('imageCount').textContent = grid.length;
+        }
+
+        function addMessage(message) {
+            const messagesDiv = document.getElementById('messages');
+            messagesDiv.innerHTML = `${message}<br>${messagesDiv.innerHTML}`.split('<br>').slice(0, 3).join('<br>');
+        }
+
+        function exportGrid() {
+            // In a real implementation, this would create a PNG file
+            addMessage('Grid exported (feature to be implemented)');
+        }
+
+        document.addEventListener('mousedown', () => isDrawing = true);
+        document.addEventListener('mouseup', () => isDrawing = false);
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 's') saveToGrid();
+            if (e.key === 'c') clearCanvas();
+        });
+
+        initializeCanvas();
+        initializeGrid();
+    </script>
+</body>
+</html>
