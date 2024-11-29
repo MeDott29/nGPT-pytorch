@@ -1,3 +1,8 @@
+PLEASE EXCUSE THE MESS
+This is a work in progress.  Thank you for visiting.  Please enjoy!
+![alt text](image.png)
+
+
 <img src="./ngpt-table1.png" width="350px"></img>
 
 ## nGPT (normalized GPT) - Pytorch
