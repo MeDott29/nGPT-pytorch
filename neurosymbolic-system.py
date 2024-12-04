@@ -8,6 +8,8 @@ import time
 import random
 import numpy as np
 from scipy.stats import entropy
+import soundfile as sf
+from scipy.io import wavfile
 
 class NoiseChannel:
     def __init__(self, dimension: int = 512):
@@ -48,6 +50,25 @@ class NoiseChannel:
                 self.truth_metrics[key].append(value)
             
             time.sleep(0.1)
+
+class DialogueEncoder:
+    def __init__(self, noise_channel: NoiseChannel):
+        self.noise_channel = noise_channel
+        self.dialogue_buffer = []
+        
+    def encode_dialogue(self, message: Dict[str, str]) -> np.ndarray:
+        # Convert dialogue to binary with truth metrics as weights
+        metrics = self.noise_channel.measure_truth_factors()
+        
+        # Encode message content
+        content_bytes = message['content'].encode('utf-8')
+        role_bytes = message['role'].encode('utf-8')
+        
+        # Weight the encoding based on truth metrics
+        weighted_data = np.frombuffer(content_bytes + role_bytes, dtype=np.uint8)
+        weighted_data = weighted_data * (1 + metrics['entropy'])
+        
+        return weighted_data.astype(np.int16)
 
 class Agent:
     def __init__(self, name: str, model: str, color: str, noise_channel: NoiseChannel):
@@ -155,6 +176,8 @@ class NeuroSymbolicConversationalSystem:
         self.overseer_agent = OverseerAgent(model, self.noise_channel)
         self.agents = [self.neuro_symbolic_engine, self.conversational_agent, self.overseer_agent]
         self.background_thread = None
+        self.dialogue_encoder = DialogueEncoder(self.noise_channel)
+        self.audio_buffer = np.array([], dtype=np.int16)
 
     def initialize_knowledge(self, text: str):
         triplets = self.neuro_symbolic_engine.extract_symbolic_knowledge(text)
@@ -168,6 +191,11 @@ class NeuroSymbolicConversationalSystem:
                 agent.background_process(other_thoughts)
             time.sleep(5)  # Wait for 5 seconds before the next background discussion
 
+    def save_dialogue_audio(self, filename: str):
+        # Convert accumulated dialogue to audio
+        if len(self.audio_buffer) > 0:
+            wavfile.write(filename, 44100, self.audio_buffer)
+    
     def interactive_session(self):
         print(f"{Fore.CYAN}Welcome to the enhanced NeuroSymbolic AI session with three agents. Type 'exit' to end the conversation.{Style.RESET_ALL}")
         
@@ -205,6 +233,19 @@ class NeuroSymbolicConversationalSystem:
                         print(f"{agent.color}{agent.name}: {agent.background_thoughts[-1]}{Style.RESET_ALL}")
                         agent.background_thoughts.clear()
 
+            # After each response, encode the dialogue
+            for agent in self.agents:
+                encoded_dialogue = self.dialogue_encoder.encode_dialogue({
+                    "role": agent.name,
+                    "content": response
+                })
+                self.audio_buffer = np.concatenate([self.audio_buffer, encoded_dialogue])
+            
+            # Periodically save audio (e.g., every 10 messages)
+            if len(self.audio_buffer) > 44100 * 10:  # 10 seconds of audio
+                self.save_dialogue_audio("dialogue_encoding.wav")
+                self.audio_buffer = np.array([], dtype=np.int16)
+
     def run(self):
         # Start noise channel
         self.noise_thread = threading.Thread(target=self.noise_channel.run_noise, daemon=True)
@@ -220,5 +261,5 @@ class NeuroSymbolicConversationalSystem:
         self.interactive_session()
 
 if __name__ == "__main__":
-    system = NeuroSymbolicConversationalSystem("qwen2.5-coder")
+    system = NeuroSymbolicConversationalSystem("llama3.2:1b")
     system.run()

@@ -220,5 +220,5 @@ class NeuroSymbolicConversationalSystem:
         self.interactive_session()
 
 if __name__ == "__main__":
-    system = NeuroSymbolicConversationalSystem("qwen2.5-coder")
+    system = NeuroSymbolicConversationalSystem("qwen2.5:1.5b")
     system.run()
