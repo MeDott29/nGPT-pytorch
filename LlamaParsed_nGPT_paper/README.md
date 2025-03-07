@@ -1,1 +1,0 @@
-Premium Mode parsing
