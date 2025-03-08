@@ -1,0 +1,9 @@
+ngpt-pytorch
+tqdm
+numpy
+pygame
+matplotlib
+torch
+einops
+rotary-embedding-torch
+scikit-learn
